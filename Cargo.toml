@@ -1,0 +1,11 @@
+[package]
+name = "cloud-readers-rs"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+async-trait = "0.1"
+rusoto_core = { version = "0.47.0", default_features = false, features=["rustls"] }
+rusoto_s3 = { version = "0.47.0", default_features = false, features=["rustls"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = { version = "1" }
