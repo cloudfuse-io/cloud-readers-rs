@@ -7,7 +7,9 @@ use std::time::Instant;
 use anyhow::Result;
 use anyhow::{anyhow, bail, ensure};
 use async_trait::async_trait;
+use futures::stream::StreamExt;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 /// A reader that points to a cached chunk
 /// TODO this cannot read from multiple concatenated chunks
@@ -105,14 +107,15 @@ impl RangeCache {
         cache
     }
 
-    pub async fn start(&self, mut rx: UnboundedReceiver<DownloadRequest>) {
+    pub async fn start(&self, rx: UnboundedReceiver<DownloadRequest>) {
         let data_ref = Arc::clone(&self.data);
         let cv_ref = Arc::clone(&self.cv);
         let downloaders_ref = Arc::clone(&self.downloaders);
         let stats_ref = Arc::clone(&self.stats);
+        let mut rx = UnboundedReceiverStream::new(rx);
         tokio::spawn(async move {
             let pool = Arc::new(tokio::sync::Semaphore::new(8));
-            while let Some(message) = rx.recv().await {
+            while let Some(message) = rx.next().await {
                 // obtain a permit, it will be released in the spawned download task
                 let permit = pool.acquire().await.unwrap();
                 permit.forget();

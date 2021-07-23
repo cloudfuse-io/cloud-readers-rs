@@ -9,3 +9,5 @@ rusoto_core = { version = "0.47.0", default_features = false, features=["rustls"
 rusoto_s3 = { version = "0.47.0", default_features = false, features=["rustls"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1" }
+tokio-stream = { version = "0.1.7" }
+futures = { version = "0.3.15" }
