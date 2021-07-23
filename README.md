@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Master](https://github.com/cloudfuse-io/cloud-readers-rs/actions/workflows/rust.yml/badge.svg)
+[![codecov](https://codecov.io/gh/cloudfuse-io/cloud-readers-rs/branch/master/graph/badge.svg?token=PUJFCQUNY3)](https://codecov.io/gh/cloudfuse-io/cloud-readers-rs)
 
 Optimized and flexible helpers for reading large data files from cloud storages (or more generally, from the network).
 
