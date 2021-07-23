@@ -1,6 +1,7 @@
 # :cloud: Rust Cloud Readers :cloud:
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Master](https://github.com/cloudfuse-io/cloud-readers-rs/actions/workflows/rust.yml/badge.svg)
 
 Optimized and flexible helpers for reading large data files from cloud storages (or more generally, from the network).
 
