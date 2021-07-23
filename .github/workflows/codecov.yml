@@ -1,0 +1,19 @@
+name: Codecov
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+  CODECOV_TOKEN: b03fe758-d029-491f-8bb1-2e5959ff7202
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: maboesanman/rust-codecov@v0
