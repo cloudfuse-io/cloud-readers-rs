@@ -122,6 +122,9 @@ struct FileCacheCursor {
 
 impl Read for FileCacheCursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.position == self.cache.get_file_size() {
+            return Ok(0);
+        }
         let cache_cursor = self
             .cache
             .get(self.position)
@@ -174,7 +177,7 @@ impl DownloadCache {
 
     // TODO should this be async or not???
     // TODO do not re-download chunks if same file was already registered
-    pub async fn register(&mut self, file_handle: Box<dyn FileHandle>) -> FileCache {
+    pub fn register(&mut self, file_handle: Box<dyn FileHandle>) -> FileCache {
         let (tx, mut rx) = unbounded_channel::<Range>();
         let file_cache;
         {
@@ -314,11 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_within_range() {
-        let mut download_cache = DownloadCache::new();
-
-        let mock_file_handle = MockFileHandle::new(1000);
-
-        let mut file_cache = download_cache.register(Box::new(mock_file_handle)).await;
+        let (download_cache, mut file_cache) = init_mock(1000);
 
         file_cache
             .queue_download(vec![Range {
@@ -353,11 +352,7 @@ file = mock_downloader / mock_uri:
 
     #[tokio::test]
     async fn test_read_accross_ranges() {
-        let mut download_cache = DownloadCache::new();
-
-        let mock_file_handle = MockFileHandle::new(1000);
-
-        let mut file_cache = download_cache.register(Box::new(mock_file_handle)).await;
+        let (download_cache, mut file_cache) = init_mock(1000);
 
         file_cache
             .queue_download(vec![
@@ -397,12 +392,52 @@ file = mock_downloader / mock_uri:
     }
 
     #[tokio::test]
+    async fn test_read_complete_file() {
+        let file_size = 100;
+        let (download_cache, mut file_cache) = init_mock(file_size);
+
+        // we schedule the download of the whole file
+        file_cache
+            .queue_download(vec![Range {
+                start: 0,
+                length: file_size as usize,
+            }])
+            .expect("Could not queue Range on handle");
+
+        let cursor = FileCacheCursor {
+            cache: file_cache,
+            position: 0,
+        };
+
+        let target = pattern(0, file_size as usize);
+        let mut cursor = cursor.clone();
+        // perform blocking read in separate thread!
+        let result = tokio::task::spawn_blocking(move || -> io::Result<Vec<u8>> {
+            let mut content = vec![];
+            // we try to read the whole file
+            cursor.read_to_end(&mut content)?;
+            Ok(content)
+        })
+        .await
+        .unwrap()
+        .expect(&format!(
+            "Could not read bytes bytes [0:{len}[ in download [0:{len}[",
+            len = file_size,
+        ));
+        assert_eq!(result, target);
+
+        // check the debug output for the cache
+        assert_eq!(
+            format!("{:?}", download_cache),
+            "\
+file = mock_downloader / mock_uri:
+-- Start=0000000000 Status=Done(100 bytes)"
+        );
+    }
+
+    #[tokio::test]
     async fn test_read_uninit() {
-        let mut download_cache = DownloadCache::new();
-
-        let mock_file_handle = MockFileHandle::new(1000);
-
-        let mut file_cache = download_cache.register(Box::new(mock_file_handle)).await;
+        let (_, mut file_cache) = init_mock(1000);
 
         let mut cursor = FileCacheCursor {
             cache: file_cache.clone(),
@@ -495,6 +530,16 @@ Download not scheduled at position 300, scheduled ranges are:
         fn get_file_size(&self) -> u64 {
             self.length
         }
+    }
+
+    fn init_mock(len: u64) -> (DownloadCache, FileCache) {
+        let mut download_cache = DownloadCache::new();
+
+        let mock_file_handle = MockFileHandle::new(len);
+
+        let file_cache = download_cache.register(Box::new(mock_file_handle));
+
+        (download_cache, file_cache)
     }
 
     /// Assert that the next `target.len()` bytes of `cursor` match the bytes in `target`
