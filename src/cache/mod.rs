@@ -138,11 +138,13 @@ impl FileCache {
                 .map(|(start, dl)| (*start, dl.clone()));
         }
 
-        let before = before.ok_or(anyhow!(
-            "Download not scheduled at position {}, scheduled ranges are:\n{}",
-            start,
-            fmt_debug(&*ranges_guard),
-        ))?;
+        let before = before.ok_or_else(|| {
+            anyhow!(
+                "Download not scheduled at position {}, scheduled ranges are:\n{}",
+                start,
+                fmt_debug(&*ranges_guard),
+            )
+        })?;
 
         match before.1 {
             Download::Done(bytes) => {
@@ -154,7 +156,7 @@ impl FileCache {
                 );
                 RangeCursor::try_new(bytes, start - before.0)
             }
-            Download::Error(err) => bail!(err.to_owned()),
+            Download::Error(err) => bail!(err),
             Download::Pending(_) => unreachable!(),
         }
     }
