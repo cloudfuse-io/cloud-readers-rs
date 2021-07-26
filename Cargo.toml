@@ -3,13 +3,21 @@ name = "cloud-readers-rs"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+default = [ "s3_rusoto" ]
+s3_rusoto = ["rusoto_core", "rusoto_s3"]
+
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
 futures = "0.3.15" 
 itertools = "0.10.1" 
-rusoto_core = { version = "0.47.0", default_features = false, features=["rustls"] }
-rusoto_s3 = { version = "0.47.0", default_features = false, features=["rustls"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.7"
+
+# s3_rusoto
+rusoto_core = { version = "0.47.0", default_features = false, features=["rustls"], optional = true }
+rusoto_s3 = { version = "0.47.0", default_features = false, features=["rustls"], optional = true }
+
+
 

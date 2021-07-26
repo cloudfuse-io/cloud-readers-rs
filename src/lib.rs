@@ -3,5 +3,7 @@
 //! To get started, create an instance of `DownloadCache` and start registering `FileHandle` trait objects.
 
 mod cache;
-
 pub use cache::*;
+
+#[cfg(feature = "s3_rusoto")]
+pub mod s3_rusoto;

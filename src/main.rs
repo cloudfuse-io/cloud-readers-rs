@@ -1,27 +1,44 @@
+//! example on how to get bytes from S3 usning the cloud reader
+
+use std::io::Read;
+
 use anyhow::Result;
+
+use cloud_readers_rs::s3_rusoto::S3FileHandle;
+use cloud_readers_rs::{DownloadCache, FileCacheCursor, Range};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let (dler_id, dler_creator) = s3::downloader_creator("us-east-2");
-    // let file_id = s3::file_id("cloudfuse-taxi-data", "raw_small/2009/01/data.parquet");
-    // let length = 27_301_328;
-    // let cache = Arc::new(RangeCache::new().await);
-    // let file = CachedFile::new(
-    //     file_id.clone(),
-    //     length,
-    //     Arc::clone(&cache),
-    //     dler_id.clone(),
-    //     dler_creator,
-    // );
+    let file_handle = S3FileHandle::new(
+        "us-east-2".to_owned(),
+        "cloudfuse-taxi-data".to_owned(),
+        "raw_small/2009/01/data.parquet".to_owned(),
+        27_301_328,
+    );
 
-    // file.prefetch(0, 100);
-    // file.prefetch(200, 100);
-    // file.prefetch(400, 100);
+    let mut download_cache = DownloadCache::new();
+    let mut file_cache = download_cache.register(Box::new(file_handle)).await;
 
-    // let mut reader = cache.get(dler_id, file_id, 200, 50)?;
+    file_cache.queue_download(vec![
+        Range {
+            start: 0,
+            length: 100,
+        },
+        Range {
+            start: 100,
+            length: 200,
+        },
+    ])?;
 
-    // let mut buf = vec![0u8; 50];
-    // reader.read_exact(&mut buf)?;
+    let mut file_reader = FileCacheCursor {
+        cache: file_cache,
+        position: 0,
+    };
+
+    let mut buf = vec![0u8; 200];
+    file_reader.read_exact(&mut buf)?;
+
+    println!("bytes seem to have been read ;-)");
 
     Ok(())
 }
