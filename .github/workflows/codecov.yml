@@ -14,10 +14,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Run cargo-tarpaulin
-      uses: actions-rs/tarpaulin@v0.1
-      with:
-        version: '0.18.0'
-        args: '-- --test-threads 1'
+    - name: Install Tarpaulin
+      run: cargo install cargo-tarpaulin
+    - name: Run Tarpaulin
+      run: cargo tarpaulin --out Xml
     - name: Upload to codecov.io
       uses: codecov/codecov-action@v2
