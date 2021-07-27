@@ -67,7 +67,7 @@ mod tests {
         let mut file_handle = S3FileHandle::new(
             "test-region-1".to_owned(),
             "test_bucket".to_owned(),
-            "test_bucket".to_owned(),
+            "test_key".to_owned(),
             1000,
         );
         file_handle.set_downloader_factory(Box::new(|_| {
@@ -75,7 +75,7 @@ mod tests {
                 MockRequestDispatcher::default()
                     .with_body("")
                     .with_request_checker(|request: &SignedRequest| {
-                        assert_eq!(request.path, "/test_bucket/test_bucket");
+                        assert_eq!(request.path, "/test_bucket/test_key");
                         assert_eq!(
                             std::str::from_utf8(&request.headers.get("range").unwrap()[0]).unwrap(),
                             "bytes=50-149"
