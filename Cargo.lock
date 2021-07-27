@@ -80,6 +80,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "serde",
+ "time",
  "winapi",
 ]
 
@@ -92,6 +93,7 @@ dependencies = [
  "futures",
  "itertools",
  "rusoto_core",
+ "rusoto_mock",
  "rusoto_s3",
  "tokio",
  "tokio-stream",
@@ -751,6 +753,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusoto_mock"
+version = "0.47.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5b3ad822f9ff58043dc81172a27f392e2f2aedebd8566c5f4bee4bfd2be021a"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
+ "http",
+ "rusoto_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rusoto_s3"
 version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -986,6 +1003,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
+]
+
+[[package]]
+name = "time"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

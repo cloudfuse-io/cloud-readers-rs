@@ -1,9 +1,7 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{ensure, Context, Result};
 use async_trait::async_trait;
-use rusoto_core::Region;
 use rusoto_s3::{GetObjectOutput, GetObjectRequest, S3Client, S3};
 use tokio::io::AsyncReadExt;
 
@@ -45,14 +43,9 @@ impl Downloader for S3Downloader {
 }
 
 impl S3Downloader {
-    pub fn new(region: &str) -> Self {
+    pub fn new(client: S3Client) -> Self {
         S3Downloader {
-            client: new_client(region),
+            client: Arc::new(client),
         }
     }
-}
-
-fn new_client(region: &str) -> Arc<S3Client> {
-    let region = Region::from_str(region).unwrap();
-    Arc::new(S3Client::new(region))
 }
