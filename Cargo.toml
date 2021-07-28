@@ -15,6 +15,10 @@ itertools = "0.10.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.7"
 
+# AWS Lambda binary
+lambda_runtime = "0.3"
+serde_json = "^1"
+
 # s3_rusoto
 rusoto_core = { version = "0.47.0", default_features = false, features=["rustls"], optional = true }
 rusoto_s3 = { version = "0.47.0", default_features = false, features=["rustls"], optional = true }

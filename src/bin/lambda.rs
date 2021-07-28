@@ -1,14 +1,20 @@
-//! example on how to get bytes from S3 usning the cloud reader
-
 use std::io::Read;
-
-use anyhow::Result;
 
 use cloud_readers_rs::s3_rusoto::S3FileHandle;
 use cloud_readers_rs::{DownloadCache, FileCacheCursor, Range};
+use lambda_runtime::{handler_fn, Context, Error};
+use serde_json::{json, Value};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
+    let func = handler_fn(func);
+    lambda_runtime::run(func).await?;
+    Ok(())
+}
+
+async fn func(_event: Value, _context: Context) -> Result<Value, Error> {
+    // let first_name = event["firstName"].as_str().unwrap_or("world");
+
     let file_handle = S3FileHandle::new(
         "us-east-2".to_owned(),
         "cloudfuse-taxi-data".to_owned(),
@@ -38,7 +44,5 @@ async fn main() -> Result<()> {
     let mut buf = vec![0u8; 200];
     file_reader.read_exact(&mut buf)?;
 
-    println!("bytes seem to have been read ;-)");
-
-    Ok(())
+    Ok(json!({ "message": "bytes seem to have been read ;-)" }))
 }
