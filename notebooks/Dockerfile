@@ -43,6 +43,7 @@ RUN zip ${BIN_NAME}.zip bootstrap
 
 FROM hashicorp/terraform as terraform
 ARG BIN_NAME
-WORKDIR /infra
+WORKDIR /workspace
 COPY --from=package-stage /buildspace/${BIN_NAME}.zip .
 COPY notebooks/lambda.tf .
+RUN terraform init

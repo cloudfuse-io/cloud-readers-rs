@@ -1,5 +1,7 @@
 terraform {
   backend "local" {
+    # put the state file in a volume that is persisted accross executions
+    path = "/mnt/state_vol/terraform.tfstate"
   }
   required_version = ">=0.12"
 
@@ -36,6 +38,8 @@ module "lambda_function" {
   description   = "Lambda to run benchmarks for the Rust Cloud Reader library"
   handler       = "N/A"
   runtime       = "provided"
+  memory_size   = 3008
+  timeout       = 60
 
   create_package         = false
   local_existing_package = "${var.binary_name}.zip"

@@ -1,8 +1,10 @@
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
+use std::time::Instant;
 
 use cloud_readers_rs::s3_rusoto::S3FileHandle;
 use cloud_readers_rs::{DownloadCache, FileCacheCursor, Range};
 use lambda_runtime::{handler_fn, Context, Error};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 #[tokio::main]
@@ -12,37 +14,56 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn func(_event: Value, _context: Context) -> Result<Value, Error> {
-    // let first_name = event["firstName"].as_str().unwrap_or("world");
+#[derive(Deserialize)]
+struct ConfigRange {
+    start: u64,
+    length: usize,
+}
 
-    let file_handle = S3FileHandle::new(
-        "us-east-2".to_owned(),
-        "cloudfuse-taxi-data".to_owned(),
-        "raw_small/2009/01/data.parquet".to_owned(),
-        27_301_328,
-    );
+#[derive(Deserialize)]
+struct Config {
+    pub region: String,
+    pub bucket: String,
+    pub key: String,
+    pub size: u64,
+    pub ranges: Vec<ConfigRange>,
+}
+
+async fn func(event: Value, _context: Context) -> Result<Value, Error> {
+    let config: Config = serde_json::from_value(event).unwrap();
+    let start_time = Instant::now();
+    let file_handle = S3FileHandle::new(config.region, config.bucket, config.key, config.size);
 
     let mut download_cache = DownloadCache::new();
     let mut file_cache = download_cache.register(Box::new(file_handle)).await;
 
-    file_cache.queue_download(vec![
-        Range {
-            start: 0,
-            length: 100,
-        },
-        Range {
-            start: 100,
-            length: 200,
-        },
-    ])?;
+    file_cache.queue_download(
+        config
+            .ranges
+            .iter()
+            .map(|r| Range {
+                start: r.start,
+                length: r.length,
+            })
+            .collect(),
+    )?;
 
     let mut file_reader = FileCacheCursor {
         cache: file_cache,
         position: 0,
     };
 
-    let mut buf = vec![0u8; 200];
-    file_reader.read_exact(&mut buf)?;
+    let init_duration = start_time.elapsed().as_millis() as u64;
 
-    Ok(json!({ "message": "bytes seem to have been read ;-)" }))
+    let mut range_durations = vec![];
+    let start_time = Instant::now();
+    for range in config.ranges {
+        // reading the bytes forces to block until the range is downloaded
+        let mut buf = vec![0u8; 10];
+        file_reader.seek(SeekFrom::Start(range.start)).unwrap();
+        file_reader.read_exact(&mut buf).unwrap();
+        range_durations.push(start_time.elapsed().as_millis() as u64);
+    }
+
+    Ok(json!({ "init_duration": init_duration, "range_durations": range_durations}))
 }

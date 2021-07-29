@@ -117,6 +117,7 @@ dependencies = [
  "rusoto_core",
  "rusoto_mock",
  "rusoto_s3",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
