@@ -26,6 +26,7 @@ struct Config {
     pub bucket: String,
     pub key: String,
     pub size: u64,
+    pub max_parallel: usize,
     pub ranges: Vec<ConfigRange>,
 }
 
@@ -34,7 +35,7 @@ async fn func(event: Value, _context: Context) -> Result<Value, Error> {
     let start_time = Instant::now();
     let file_handle = S3FileHandle::new(config.region, config.bucket, config.key, config.size);
 
-    let mut download_cache = DownloadCache::new();
+    let mut download_cache = DownloadCache::new(config.max_parallel);
     let mut file_cache = download_cache.register(Box::new(file_handle)).await;
 
     file_cache.queue_download(

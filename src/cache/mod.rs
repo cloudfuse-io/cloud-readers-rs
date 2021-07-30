@@ -90,7 +90,7 @@ impl FileCache {
     fn new(file_size: u64, tx: UnboundedSender<Range>) -> Self {
         Self {
             ranges: Arc::new(Mutex::new(BTreeMap::new())),
-            cv: Arc::new(std::sync::Condvar::new()),
+            cv: Arc::new(Condvar::new()),
             file_size,
             tx,
         }
@@ -235,7 +235,7 @@ Download not scheduled at position 120, scheduled ranges are:
     }
 
     async fn init_mock(len: u64) -> FileCache {
-        let mut download_cache = DownloadCache::new();
+        let mut download_cache = DownloadCache::new(1);
 
         let mock_file_handle = MockFileHandle::new(len);
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::{mpsc::unbounded_channel, Semaphore};
 
 use super::{Download, Downloader, FileCache, FileHandle, Range};
 
@@ -24,13 +24,17 @@ type FileCacheMap = Arc<Mutex<HashMap<CacheKey, FileCache>>>;
 pub struct DownloadCache {
     data: FileCacheMap,
     downloaders: DownloaderMap,
+    semaphore: Arc<Semaphore>,
 }
 
 impl DownloadCache {
-    pub fn new() -> Self {
+    /// Create a cache capable of storing data chunks for multiple files.
+    /// * `max_parallel` - The maximum number of parallel downloads
+    pub fn new(max_parallel: usize) -> Self {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
             downloaders: Arc::new(Mutex::new(HashMap::new())),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(max_parallel)),
         }
     }
 
@@ -52,17 +56,24 @@ impl DownloadCache {
         }
         let file_cache_res = file_cache.clone();
         let downloader_ref = self.register_downloader(&*file_handle);
+        let semaphore_ref = Arc::clone(&self.semaphore);
         tokio::spawn(async move {
             let uri = file_handle.get_uri();
             while let Some(message) = rx.recv().await {
+                // obtain a permit, it will be released in the spawned download task
+                let permit = semaphore_ref.acquire().await.unwrap();
+                permit.forget();
+                // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
+                let semaphore_ref = Arc::clone(&semaphore_ref);
                 let file_cache = file_cache.clone();
                 let uri = uri.clone();
-                // run download in a dedicated task
+
                 tokio::spawn(async move {
                     let dl_res = downloader_ref
                         .download(uri.clone(), message.start, message.length)
                         .await;
+                    semaphore_ref.add_permits(1);
                     let dl_enum = match dl_res {
                         Ok(downloaded_chunk) => Download::Done(Arc::new(downloaded_chunk)),
                         Err(err) => Download::Error(format!("{}", err)),

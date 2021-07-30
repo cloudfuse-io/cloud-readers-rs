@@ -261,7 +261,7 @@ Download not scheduled at position 300, scheduled ranges are:
     //// Test Fixtures: ////
 
     async fn init_mock(len: u64) -> (DownloadCache, FileCache) {
-        let mut download_cache = DownloadCache::new();
+        let mut download_cache = DownloadCache::new(2);
 
         let mock_file_handle = MockFileHandle::new(len);
 
