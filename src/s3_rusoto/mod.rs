@@ -1,7 +1,7 @@
-//! [`FileHandle`](`crate::FileHandle`) implementation for downloading from S3 using Rusoto
+//! [`FileDescription`](`crate::FileDescription`) implementation for downloading from S3 using Rusoto
 
 mod downloader;
-mod file_handle;
+mod file_description;
 
 use downloader::S3Downloader;
-pub use file_handle::S3FileHandle;
+pub use file_description::S3FileDescription;

@@ -2,14 +2,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use super::S3Downloader;
-use crate::{Downloader, FileHandle};
+use crate::{Downloader, FileDescription};
 
 use rusoto_core::Region;
 use rusoto_s3::S3Client;
 
 type DownloaderFactory = Box<dyn Fn(&str) -> Arc<dyn Downloader> + Send>;
 
-pub struct S3FileHandle {
+pub struct S3FileDescription {
     region: String,
     bucket: String,
     key: String,
@@ -17,9 +17,9 @@ pub struct S3FileHandle {
     downloader_factory: DownloaderFactory,
 }
 
-impl S3FileHandle {
+impl S3FileDescription {
     pub fn new(region: String, bucket: String, key: String, size: u64) -> Self {
-        S3FileHandle {
+        S3FileDescription {
             region,
             bucket,
             key,
@@ -32,7 +32,7 @@ impl S3FileHandle {
     }
 }
 
-impl FileHandle for S3FileHandle {
+impl FileDescription for S3FileDescription {
     fn get_downloader(&self) -> Arc<dyn Downloader> {
         (self.downloader_factory)(&self.region)
     }
@@ -63,14 +63,14 @@ mod tests {
     use rusoto_s3::S3Client;
 
     #[tokio::test]
-    async fn test_file_handle() {
-        let mut file_handle = S3FileHandle::new(
+    async fn test_file_description() {
+        let mut file_description = S3FileDescription::new(
             "test-region-1".to_owned(),
             "test_bucket".to_owned(),
             "test_key".to_owned(),
             1000,
         );
-        file_handle.set_downloader_factory(Box::new(|_| {
+        file_description.set_downloader_factory(Box::new(|_| {
             let client = S3Client::new_with(
                 MockRequestDispatcher::default()
                     .with_body("")
@@ -89,9 +89,9 @@ mod tests {
 
         #[allow(unused_must_use)]
         {
-            file_handle
+            file_description
                 .get_downloader()
-                .download(file_handle.get_uri(), 50, 100)
+                .download(file_description.get_uri(), 50, 100)
                 .await;
         }
     }
