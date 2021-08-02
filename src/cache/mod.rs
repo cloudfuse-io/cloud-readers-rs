@@ -11,7 +11,7 @@ mod download_cache;
 mod mock;
 mod models;
 
-pub use cursor::FileCacheCursor;
+pub use cursor::CacheCursor;
 pub use download_cache::DownloadCache;
 pub use models::*;
 
@@ -30,31 +30,6 @@ impl fmt::Debug for Download {
             Download::Done(data) => write!(f, "Done({} bytes)", data.len()),
             Download::Error(error) => write!(f, "Error({:?})", error),
         }
-    }
-}
-
-/// Container of the references stored by the download cache for a given file.
-///
-/// To get a FileCache, you need to register a [`FileHandle`] on a [`DownloadCache`].
-/// You can then schedule the download of the file chunks using [`queue_download`](Self::queue_download).
-#[derive(Clone)]
-pub struct FileCache {
-    ranges: Arc<Mutex<BTreeMap<u64, Download>>>,
-    cv: Arc<Condvar>,
-    file_size: u64,
-    tx: UnboundedSender<Range>,
-}
-
-fn fmt_debug(map: &BTreeMap<u64, Download>) -> String {
-    map.iter()
-        .map(|(pos, dl)| format!("-- Start={:0>10} Status={:?}", pos, dl))
-        .join("\n")
-}
-
-impl fmt::Debug for FileCache {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let range_guard = self.ranges.lock().unwrap();
-        write!(f, "{}", fmt_debug(&*range_guard))
     }
 }
 
@@ -86,39 +61,30 @@ impl RangeCursor {
     }
 }
 
+#[derive(Clone)]
+struct FileCache {
+    ranges: Arc<Mutex<BTreeMap<u64, Download>>>,
+    cv: Arc<Condvar>,
+    file_size: u64,
+}
+
 impl FileCache {
-    fn new(file_size: u64, tx: UnboundedSender<Range>) -> Self {
+    fn new(file_size: u64) -> Self {
         Self {
             ranges: Arc::new(Mutex::new(BTreeMap::new())),
             cv: Arc::new(Condvar::new()),
             file_size,
-            tx,
         }
     }
 
-    pub fn queue_download(&mut self, ranges: Vec<Range>) -> Result<()> {
-        for range in ranges {
-            self.insert(range.start, Download::Pending(range.length));
-            self.tx.send(range).map_err(|e| anyhow!(e.to_string()))?;
-        }
-        Ok(())
-    }
-
-    pub fn get_file_size(&self) -> u64 {
-        self.file_size
-    }
-
-    // Insert download result and notifies blocked readers that something changes
+    /// Insert download result and notifies blocked readers that something changes
     fn insert(&self, start: u64, download: Download) {
         let mut range_guard = self.ranges.lock().unwrap();
         range_guard.insert(start, download);
         self.cv.notify_all()
     }
 
-    /// Get a chunk from the cache
-    /// For now the cache can only get get single chunck readers and fails if the dl was not scheduled
-    /// If the download is not finished, this waits synchronously for the chunk to be ready
-    fn get(&self, start: u64) -> Result<RangeCursor> {
+    fn get_range(&self, start: u64) -> Result<RangeCursor> {
         use std::ops::Bound::{Included, Unbounded};
         let mut ranges_guard = self.ranges.lock().unwrap();
 
@@ -162,6 +128,57 @@ impl FileCache {
     }
 }
 
+/// Container of the references stored by the download cache for a given file.
+///
+/// To get a [`FileManager`], you need to register a [`FileDescription`] on a [`DownloadCache`].
+/// You can then schedule the download of the file chunks using [`queue_download`](Self::queue_download).
+#[derive(Clone)]
+pub struct FileManager {
+    cache: FileCache,
+    tx: UnboundedSender<Range>,
+}
+
+fn fmt_debug(map: &BTreeMap<u64, Download>) -> String {
+    map.iter()
+        .map(|(pos, dl)| format!("-- Start={:0>10} Status={:?}", pos, dl))
+        .join("\n")
+}
+
+impl fmt::Debug for FileCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let range_guard = self.ranges.lock().unwrap();
+        write!(f, "{}", fmt_debug(&*range_guard))
+    }
+}
+
+impl FileManager {
+    fn new(cache: FileCache, tx: UnboundedSender<Range>) -> Self {
+        Self { cache, tx }
+    }
+
+    /// Schedule new downloads for the file
+    /// The downloads will be started in the specified order.
+    pub fn queue_download(&self, ranges: Vec<Range>) -> Result<()> {
+        for range in ranges {
+            self.cache
+                .insert(range.start, Download::Pending(range.length));
+            self.tx.send(range).map_err(|e| anyhow!(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Get a chunk from the cache
+    /// For now the cache can only get single chunck readers and fails if the dl was not scheduled
+    /// If the download is not finished, this waits synchronously for the chunk to be ready
+    fn get_range(&self, start: u64) -> Result<RangeCursor> {
+        self.cache.get_range(start)
+    }
+
+    pub fn get_file_size(&self) -> u64 {
+        self.cache.file_size
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::mock::*;
@@ -169,40 +186,40 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_at_0() {
-        let mut file_cache = init_mock(1000).await;
+        let file_manager = init_mock(1000).await;
 
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 0,
                 length: 100,
             }])
             .expect("Could not queue Range on handle");
 
-        assert_cursor(file_cache, 0, pattern(0, 100))
+        assert_cursor(file_manager, 0, pattern(0, 100))
             .await
             .expect("Could not get range at 0 with download of [0:100[");
     }
 
     #[tokio::test]
     async fn test_read_with_offset() {
-        let mut file_cache = init_mock(1000).await;
+        let file_manager = init_mock(1000).await;
 
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 0,
                 length: 100,
             }])
             .expect("Could not queue Range on handle");
 
-        assert_cursor(file_cache, 50, pattern(50, 100))
+        assert_cursor(file_manager, 50, pattern(50, 100))
             .await
             .expect("Could not get range at 50 with download of [0:100[");
     }
 
     #[tokio::test]
     async fn test_read_uninited() {
-        let file_cache = init_mock(1000).await;
-        let err_msg = assert_cursor(file_cache, 0, pattern(0, 100))
+        let file_manager = init_mock(1000).await;
+        let err_msg = assert_cursor(file_manager, 0, pattern(0, 100))
             .await
             .expect_err("Read file without queued downloads should fail")
             .to_string();
@@ -212,16 +229,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_outside_download() {
-        let mut file_cache = init_mock(1000).await;
+        let file_manager = init_mock(1000).await;
 
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 0,
                 length: 100,
             }])
             .expect("Could not queue Range on handle");
 
-        let err_msg = assert_cursor(file_cache, 120, pattern(120, 200))
+        let err_msg = assert_cursor(file_manager, 120, pattern(120, 200))
             .await
             .expect_err("Read file without scheduled downloads should fail")
             .to_string();
@@ -234,23 +251,26 @@ Download not scheduled at position 120, scheduled ranges are:
         );
     }
 
-    async fn init_mock(len: u64) -> FileCache {
+    async fn init_mock(len: u64) -> FileManager {
         let mut download_cache = DownloadCache::new(1);
 
-        let mock_file_handle = MockFileHandle::new(len);
+        let mock_file_description = MockFileDescription::new(len);
 
-        download_cache.register(Box::new(mock_file_handle)).await
+        download_cache
+            .register(Box::new(mock_file_description))
+            .await
     }
 
     /// Assert that the first `target.len()` bytes of `cursor` match the bytes in `target`
     /// SPAWNS A NEW THREAD TO GET THE RANGE BECAUSE IT IS BLOCKING!
-    async fn assert_cursor(file_cache: FileCache, start: u64, target: Vec<u8>) -> Result<()> {
+    async fn assert_cursor(file_manager: FileManager, start: u64, target: Vec<u8>) -> Result<()> {
         let target_length = target.len();
         // perform blocking get in separate thread!
-        let cursor =
-            tokio::task::spawn_blocking(move || -> Result<RangeCursor> { file_cache.get(start) })
-                .await
-                .unwrap()?;
+        let cursor = tokio::task::spawn_blocking(move || -> Result<RangeCursor> {
+            file_manager.get_range(start)
+        })
+        .await
+        .unwrap()?;
         // verify the bytes in the range
         let mut content = vec![0u8; target_length];
         cursor.read(&mut content);

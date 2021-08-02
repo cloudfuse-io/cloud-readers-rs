@@ -1,4 +1,4 @@
-use super::super::{Downloader, FileHandle};
+use super::super::{Downloader, FileDescription};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -22,19 +22,19 @@ impl Downloader for MockDownloader {
     }
 }
 
-/// A FileHandle implementation that uses [`MockDownloader`] to generate mock bytes
-pub struct MockFileHandle {
+/// A FileDescription implementation that uses [`MockDownloader`] to generate mock bytes
+pub struct MockFileDescription {
     length: u64,
 }
 
-impl MockFileHandle {
+impl MockFileDescription {
     #[allow(dead_code)]
     pub fn new(length: u64) -> Self {
         Self { length }
     }
 }
 
-impl FileHandle for MockFileHandle {
+impl FileDescription for MockFileDescription {
     fn get_downloader(&self) -> Arc<dyn Downloader> {
         Arc::new(MockDownloader)
     }

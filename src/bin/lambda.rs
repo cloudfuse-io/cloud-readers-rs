@@ -1,8 +1,8 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Instant;
 
-use cloud_readers_rs::s3_rusoto::S3FileHandle;
-use cloud_readers_rs::{DownloadCache, FileCacheCursor, Range};
+use cloud_readers_rs::s3_rusoto::S3FileDescription;
+use cloud_readers_rs::{CacheCursor, DownloadCache, Range};
 use lambda_runtime::{handler_fn, Context, Error};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -33,12 +33,13 @@ struct Config {
 async fn func(event: Value, _context: Context) -> Result<Value, Error> {
     let config: Config = serde_json::from_value(event).unwrap();
     let start_time = Instant::now();
-    let file_handle = S3FileHandle::new(config.region, config.bucket, config.key, config.size);
+    let file_description =
+        S3FileDescription::new(config.region, config.bucket, config.key, config.size);
 
     let mut download_cache = DownloadCache::new(config.max_parallel);
-    let mut file_cache = download_cache.register(Box::new(file_handle)).await;
+    let file_manager = download_cache.register(Box::new(file_description)).await;
 
-    file_cache.queue_download(
+    file_manager.queue_download(
         config
             .ranges
             .iter()
@@ -49,8 +50,8 @@ async fn func(event: Value, _context: Context) -> Result<Value, Error> {
             .collect(),
     )?;
 
-    let mut file_reader = FileCacheCursor {
-        cache: file_cache,
+    let mut file_reader = CacheCursor {
+        cache: file_manager,
         position: 0,
     };
 

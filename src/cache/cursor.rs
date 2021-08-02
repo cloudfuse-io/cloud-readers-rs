@@ -2,26 +2,26 @@ use std::io::{self, Read, Seek, SeekFrom};
 
 use anyhow::anyhow;
 
-use super::FileCache;
+use super::FileManager;
 
 /// Cursor that allows the to Read/Seek through a [`FileCache`]
 ///
 /// Blocks if bytes are read that were not yet downloaded
 /// Fails if bytes are read that were not scheduled for downloading
 #[derive(Clone)]
-pub struct FileCacheCursor {
-    pub cache: FileCache,
+pub struct CacheCursor {
+    pub cache: FileManager,
     pub position: u64,
 }
 
-impl Read for FileCacheCursor {
+impl Read for CacheCursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.position == self.cache.get_file_size() {
             return Ok(0);
         }
         let cache_cursor = self
             .cache
-            .get(self.position)
+            .get_range(self.position)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let bytes_read = cache_cursor.read(buf);
@@ -32,7 +32,7 @@ impl Read for FileCacheCursor {
     }
 }
 
-impl Seek for FileCacheCursor {
+impl Seek for CacheCursor {
     /// implementation inspired from std::io::Cursor
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         let (base_pos, offset) = match pos {
@@ -70,17 +70,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_within_range() {
-        let (download_cache, mut file_cache) = init_mock(1000).await;
+        let (download_cache, file_manager) = init_mock(1000).await;
 
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 0,
                 length: 100,
             }])
             .expect("Could not queue Range on handle");
 
-        let mut cursor = FileCacheCursor {
-            cache: file_cache,
+        let mut cursor = CacheCursor {
+            cache: file_manager,
             position: 0,
         };
 
@@ -105,9 +105,9 @@ file = mock_downloader / mock_uri:
 
     #[tokio::test]
     async fn test_read_accross_ranges() {
-        let (download_cache, mut file_cache) = init_mock(1000).await;
+        let (download_cache, file_manager) = init_mock(1000).await;
 
-        file_cache
+        file_manager
             .queue_download(vec![
                 Range {
                     start: 200,
@@ -124,8 +124,8 @@ file = mock_downloader / mock_uri:
             ])
             .expect("Could not queue Range on handle");
 
-        let cursor = FileCacheCursor {
-            cache: file_cache,
+        let cursor = CacheCursor {
+            cache: file_manager,
             position: 0,
         };
 
@@ -147,23 +147,22 @@ file = mock_downloader / mock_uri:
     #[tokio::test]
     async fn test_read_complete_file() {
         let file_size = 100;
-        let (download_cache, mut file_cache) = init_mock(file_size).await;
+        let (download_cache, file_manager) = init_mock(file_size).await;
 
         // we schedule the download of the whole file
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 0,
                 length: file_size as usize,
             }])
             .expect("Could not queue Range on handle");
 
-        let cursor = FileCacheCursor {
-            cache: file_cache,
+        let mut cursor = CacheCursor {
+            cache: file_manager,
             position: 0,
         };
 
         let target = pattern(0, file_size as usize);
-        let mut cursor = cursor.clone();
         // perform blocking read in separate thread!
         let result = tokio::task::spawn_blocking(move || -> io::Result<Vec<u8>> {
             let mut content = vec![];
@@ -190,10 +189,10 @@ file = mock_downloader / mock_uri:
 
     #[tokio::test]
     async fn test_read_uninit() {
-        let (_, mut file_cache) = init_mock(1000).await;
+        let (_, file_manager) = init_mock(1000).await;
 
-        let mut cursor = FileCacheCursor {
-            cache: file_cache.clone(),
+        let mut cursor = CacheCursor {
+            cache: file_manager.clone(),
             position: 0,
         };
 
@@ -205,7 +204,7 @@ file = mock_downloader / mock_uri:
         assert_eq!(err_msg, "No download scheduled");
 
         // try reading before of downloaded range
-        file_cache
+        file_manager
             .queue_download(vec![Range {
                 start: 200,
                 length: 100,
@@ -240,7 +239,7 @@ Download not scheduled at position 300, scheduled ranges are:
 
     #[tokio::test]
     async fn test_seek() {
-        let mut cursor = FileCacheCursor {
+        let mut cursor = CacheCursor {
             cache: init_mock(100).await.1,
             position: 0,
         };
@@ -260,19 +259,21 @@ Download not scheduled at position 300, scheduled ranges are:
 
     //// Test Fixtures: ////
 
-    async fn init_mock(len: u64) -> (DownloadCache, FileCache) {
+    async fn init_mock(len: u64) -> (DownloadCache, FileManager) {
         let mut download_cache = DownloadCache::new(2);
 
-        let mock_file_handle = MockFileHandle::new(len);
+        let mock_file_description = MockFileDescription::new(len);
 
-        let file_cache = download_cache.register(Box::new(mock_file_handle)).await;
+        let file_manager = download_cache
+            .register(Box::new(mock_file_description))
+            .await;
 
-        (download_cache, file_cache)
+        (download_cache, file_manager)
     }
 
     /// Assert that the next `target.len()` bytes of `cursor` match the bytes in `target`
     /// SPAWNS A NEW THREAD TO PERFORM THE READ BECAUSE IT IS BLOCKING!
-    async fn assert_cursor(cursor: &FileCacheCursor, target: Vec<u8>) -> io::Result<()> {
+    async fn assert_cursor(cursor: &CacheCursor, target: Vec<u8>) -> io::Result<()> {
         let target_length = target.len();
         let mut cursor = cursor.clone();
         // perform blocking read in separate thread!
