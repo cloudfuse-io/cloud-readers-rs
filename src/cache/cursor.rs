@@ -4,7 +4,7 @@ use anyhow::anyhow;
 
 use super::FileManager;
 
-/// Cursor that allows the to Read/Seek through a [`FileManager`]
+/// Cursor that allows the to Read/Seek through a [`FileManager`].
 ///
 /// Blocks if bytes are read that were not yet downloaded
 /// Fails if bytes are read that were not scheduled for downloading

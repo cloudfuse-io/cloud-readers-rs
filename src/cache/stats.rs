@@ -1,5 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Synchronized container for the inner statistics of the caching system.
+///
+/// You can get these stats from the [`DownloadCache`](super::DownloadCache) directly.
 pub struct CacheStats {
     downloaded_bytes: AtomicU64,
     waiting_download_ms: AtomicU64,

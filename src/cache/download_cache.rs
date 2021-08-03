@@ -99,6 +99,7 @@ impl DownloadCache {
         file_manager
     }
 
+    /// Provides a reference that gives access to the internal statistics in a synchronized fashion.
     pub fn get_stats(&self) -> &CacheStats {
         &self.stats
     }
