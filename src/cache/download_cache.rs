@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use tokio::sync::{mpsc::unbounded_channel, Semaphore};
 
-use super::{Download, Downloader, FileCache, FileDescription, FileManager, Range};
+use super::file_manager::{Download, FileCache, FileManager};
+use super::stats::CacheStats;
+use super::{Downloader, FileDescription, Range};
 
 type DownloaderMap = Arc<Mutex<HashMap<String, Arc<dyn Downloader>>>>;
 
@@ -18,13 +21,14 @@ type FileCacheMap = Arc<Mutex<HashMap<CacheKey, FileCache>>>;
 
 /// [Start Here] Structure for caching download clients and downloaded data chunks.
 ///
-/// The Download cache converts [`FileDescription`] trait objects into instances of [`FileCache`],
+/// The Download cache converts [`FileDescription`] trait objects into instances of [`FileManager`],
 /// registering the downloader and the file URI while doing so.
-/// The actual download strategy is specified on the [`FileCache`] object.
+/// The actual download strategy is specified on the [`FileManager`] object.
 pub struct DownloadCache {
     data: FileCacheMap,
     downloaders: DownloaderMap,
     semaphore: Arc<Semaphore>,
+    stats: Arc<CacheStats>,
 }
 
 impl DownloadCache {
@@ -35,6 +39,7 @@ impl DownloadCache {
             data: Arc::new(Mutex::new(HashMap::new())),
             downloaders: Arc::new(Mutex::new(HashMap::new())),
             semaphore: Arc::new(tokio::sync::Semaphore::new(max_parallel)),
+            stats: Arc::new(CacheStats::new()),
         }
     }
 
@@ -57,24 +62,34 @@ impl DownloadCache {
         let file_manager = FileManager::new(file_cache.clone(), tx);
         let downloader_ref = self.register_downloader(&*file_description);
         let semaphore_ref = Arc::clone(&self.semaphore);
+        let stat_ref = Arc::clone(&self.stats);
         let uri = file_description.get_uri();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
-                // obtain a permit, it will be released in the spawned download task
+                // obtain a permit, it will be released once the download completes
+                let start_time = Instant::now();
                 let permit = semaphore_ref.acquire().await.unwrap();
                 permit.forget();
+                stat_ref.inc_waiting_download_ms(start_time.elapsed().as_millis() as u64);
                 // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
                 let semaphore_ref = Arc::clone(&semaphore_ref);
+                let stats_ref = Arc::clone(&stat_ref);
                 let file_cache = file_cache.clone();
                 let uri = uri.clone();
                 tokio::spawn(async move {
+                    // start the actual download
                     let dl_res = downloader_ref
                         .download(uri.clone(), message.start, message.length)
                         .await;
+                    // once the download is completed, release the permit
                     semaphore_ref.add_permits(1);
                     let dl_enum = match dl_res {
-                        Ok(downloaded_chunk) => Download::Done(Arc::new(downloaded_chunk)),
+                        Ok(downloaded_chunk) => {
+                            stats_ref.inc_downloaded_bytes(downloaded_chunk.len() as u64);
+                            stats_ref.inc_download_count(1);
+                            Download::Done(Arc::new(downloaded_chunk))
+                        }
                         Err(err) => Download::Error(format!("{}", err)),
                     };
                     file_cache.insert(message.start, dl_enum);
@@ -82,6 +97,10 @@ impl DownloadCache {
             }
         });
         file_manager
+    }
+
+    pub fn get_stats(&self) -> &CacheStats {
+        &self.stats
     }
 
     fn register_downloader(&self, file_description: &dyn FileDescription) -> Arc<dyn Downloader> {

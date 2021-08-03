@@ -1,4 +1,5 @@
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use cloud_readers_rs::s3_rusoto::S3FileDescription;
@@ -6,6 +7,8 @@ use cloud_readers_rs::{CacheCursor, DownloadCache, Range};
 use lambda_runtime::{handler_fn, Context, Error};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+static RUN_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -30,7 +33,8 @@ struct Config {
     pub ranges: Vec<ConfigRange>,
 }
 
-async fn func(event: Value, _context: Context) -> Result<Value, Error> {
+async fn func(event: Value, _: Context) -> Result<Value, Error> {
+    let run_count = RUN_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     let config: Config = serde_json::from_value(event).unwrap();
     let start_time = Instant::now();
     let file_description =
@@ -67,5 +71,12 @@ async fn func(event: Value, _context: Context) -> Result<Value, Error> {
         range_durations.push(start_time.elapsed().as_millis() as u64);
     }
 
-    Ok(json!({ "init_duration": init_duration, "range_durations": range_durations}))
+    Ok(json!({
+        "run_count": run_count,
+        "init_duration": init_duration,
+        "range_durations": range_durations,
+        "downloaded_bytes": download_cache.get_stats().downloaded_bytes(),
+        "waiting_download_ms": download_cache.get_stats().waiting_download_ms(),
+        "download_count": download_cache.get_stats().download_count()
+    }))
 }
