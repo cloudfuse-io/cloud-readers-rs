@@ -3,9 +3,15 @@ name = "cloud-readers-rs"
 version = "0.1.0"
 edition = "2018"
 
+[[bin]]
+name = "lambda"
+path = "src/bin/lambda.rs"
+required-features = ["stats", "s3_rusoto"]
+
 [features]
-default = [ "s3_rusoto" ]
+default = ["stats", "s3_rusoto"]
 s3_rusoto = ["rusoto_core", "rusoto_s3"]
+stats = []
 
 [dependencies]
 anyhow = "1"

@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc::unbounded_channel, Semaphore};
 
 use super::file_manager::{Download, FileCache, FileManager};
-use super::stats::CacheStats;
+use super::CacheStats;
 use super::{Downloader, FileDescription, Range};
 
 type DownloaderMap = Arc<Mutex<HashMap<String, Arc<dyn Downloader>>>>;
@@ -28,7 +28,7 @@ pub struct DownloadCache {
     data: FileCacheMap,
     downloaders: DownloaderMap,
     semaphore: Arc<Semaphore>,
-    stats: Arc<CacheStats>,
+    stats: CacheStats,
 }
 
 impl DownloadCache {
@@ -39,7 +39,7 @@ impl DownloadCache {
             data: Arc::new(Mutex::new(HashMap::new())),
             downloaders: Arc::new(Mutex::new(HashMap::new())),
             semaphore: Arc::new(tokio::sync::Semaphore::new(max_parallel)),
-            stats: Arc::new(CacheStats::new()),
+            stats: CacheStats::new(),
         }
     }
 
@@ -62,7 +62,7 @@ impl DownloadCache {
         let file_manager = FileManager::new(file_cache.clone(), tx);
         let downloader_ref = self.register_downloader(&*file_description);
         let semaphore_ref = Arc::clone(&self.semaphore);
-        let stat_ref = Arc::clone(&self.stats);
+        let stat_ref = self.stats.clone();
         let uri = file_description.get_uri();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
@@ -74,7 +74,7 @@ impl DownloadCache {
                 // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
                 let semaphore_ref = Arc::clone(&semaphore_ref);
-                let stats_ref = Arc::clone(&stat_ref);
+                let stats_ref = stat_ref.clone();
                 let file_cache = file_cache.clone();
                 let uri = uri.clone();
                 tokio::spawn(async move {
