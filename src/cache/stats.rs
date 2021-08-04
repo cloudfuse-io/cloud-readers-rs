@@ -2,6 +2,15 @@
 //! - the `sync` module is a shared reference to synchronized statistics collectors
 //! - the `noop` module is an empty structure that does not collect any statistics
 
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+pub struct DownloadStat {
+    pub size: u64,
+    pub dl_duration: u64,
+    pub wait_duration: u64,
+}
+
 #[cfg(not(feature = "stats"))]
 pub use noop::CacheStats;
 #[cfg(feature = "stats")]
@@ -9,13 +18,11 @@ pub use sync::CacheStats;
 
 #[allow(dead_code)]
 pub mod sync {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Arc;
+    use super::DownloadStat;
+    use std::sync::{Arc, Mutex};
 
     struct InnerCacheStats {
-        downloaded_bytes: AtomicU64,
-        waiting_download_ms: AtomicU64,
-        download_count: AtomicU64,
+        downloads: Mutex<Vec<DownloadStat>>,
     }
 
     /// Reference to a synchronized container with inner statistics of the caching system.
@@ -31,39 +38,27 @@ pub mod sync {
         pub(crate) fn new() -> Self {
             Self {
                 inner: Arc::new(InnerCacheStats {
-                    downloaded_bytes: AtomicU64::new(0),
-                    waiting_download_ms: AtomicU64::new(0),
-                    download_count: AtomicU64::new(0),
+                    downloads: Mutex::new(vec![]),
                 }),
             }
         }
 
-        pub fn downloaded_bytes(&self) -> u64 {
-            self.inner.downloaded_bytes.load(Ordering::Relaxed)
-        }
-        pub fn waiting_download_ms(&self) -> u64 {
-            self.inner.waiting_download_ms.load(Ordering::Relaxed)
-        }
-        pub fn download_count(&self) -> u64 {
-            self.inner.download_count.load(Ordering::Relaxed)
+        pub fn recorded_downloads(&self) -> Vec<DownloadStat> {
+            let guard = self.inner.downloads.lock().unwrap();
+            guard.clone()
         }
 
-        pub(crate) fn inc_downloaded_bytes(&self, inc: u64) {
-            self.inner.downloaded_bytes.fetch_add(inc, Ordering::SeqCst);
-        }
-        pub(crate) fn inc_waiting_download_ms(&self, inc: u64) {
-            self.inner
-                .waiting_download_ms
-                .fetch_add(inc, Ordering::SeqCst);
-        }
-        pub(crate) fn inc_download_count(&self, inc: u64) {
-            self.inner.download_count.fetch_add(inc, Ordering::SeqCst);
+        pub(crate) fn record_download(&self, dl: DownloadStat) {
+            let mut guard = self.inner.downloads.lock().unwrap();
+            guard.push(dl);
         }
     }
 }
 
 #[allow(dead_code)]
 pub mod noop {
+    use super::DownloadStat;
+
     /// A structure that does noop when called to collect stats.
     ///
     /// Calls to on this structure will mostly be optimized out by the compiler.
@@ -75,18 +70,10 @@ pub mod noop {
             Self
         }
 
-        pub fn downloaded_bytes(&self) -> u64 {
-            0
-        }
-        pub fn waiting_download_ms(&self) -> u64 {
-            0
-        }
-        pub fn download_count(&self) -> u64 {
-            0
+        pub fn recorded_downloads(&self) -> Vec<DownloadStat> {
+            vec![]
         }
 
-        pub(crate) fn inc_downloaded_bytes(&self, _: u64) {}
-        pub(crate) fn inc_waiting_download_ms(&self, _: u64) {}
-        pub(crate) fn inc_download_count(&self, _: u64) {}
+        pub(crate) fn record_download(&self, _: DownloadStat) {}
     }
 }

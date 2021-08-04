@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::Deserialize;
 
 /// Connection to a server that allows to download chunks of files
 #[async_trait]
@@ -10,6 +11,7 @@ pub trait Downloader: Send + Sync {
 }
 
 /// Start and length of a file chunk
+#[derive(Deserialize, Clone)]
 pub struct Range {
     pub start: u64,
     pub length: usize,

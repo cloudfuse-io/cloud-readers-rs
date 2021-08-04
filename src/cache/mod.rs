@@ -9,4 +9,4 @@ pub use cursor::CacheCursor;
 pub use download_cache::DownloadCache;
 pub use file_manager::FileManager;
 pub use models::*;
-pub use stats::CacheStats;
+pub use stats::{CacheStats, DownloadStat};

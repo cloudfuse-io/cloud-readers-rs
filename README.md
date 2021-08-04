@@ -29,3 +29,7 @@ The proposed strategy is the following one:
 If we apply it to the specific usecase of [Buzz](https://github.com/cloudfuse-io/buzz-rust), it boils down to this:
 
 ![Solution flow buzz](https://raw.githubusercontent.com/wiki/cloudfuse-io/cloud-readers-rs/solution_flow_buzz.jpg)
+
+## Using the library
+
+The library has a `stats` feature flag that allows to control whether it should collect execution statistics or not.

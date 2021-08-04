@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc::unbounded_channel, Semaphore};
 
 use super::file_manager::{Download, FileCache, FileManager};
-use super::CacheStats;
+use super::{CacheStats, DownloadStat};
 use super::{Downloader, FileDescription, Range};
 
 type DownloaderMap = Arc<Mutex<HashMap<String, Arc<dyn Downloader>>>>;
@@ -67,10 +67,10 @@ impl DownloadCache {
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 // obtain a permit, it will be released once the download completes
-                let start_time = Instant::now();
+                let wait_start_time = Instant::now();
                 let permit = semaphore_ref.acquire().await.unwrap();
                 permit.forget();
-                stat_ref.inc_waiting_download_ms(start_time.elapsed().as_millis() as u64);
+                let wait_duration = wait_start_time.elapsed().as_millis() as u64;
                 // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
                 let semaphore_ref = Arc::clone(&semaphore_ref);
@@ -79,6 +79,7 @@ impl DownloadCache {
                 let uri = uri.clone();
                 tokio::spawn(async move {
                     // start the actual download
+                    let dl_start_time = Instant::now();
                     let dl_res = downloader_ref
                         .download(uri.clone(), message.start, message.length)
                         .await;
@@ -86,8 +87,11 @@ impl DownloadCache {
                     semaphore_ref.add_permits(1);
                     let dl_enum = match dl_res {
                         Ok(downloaded_chunk) => {
-                            stats_ref.inc_downloaded_bytes(downloaded_chunk.len() as u64);
-                            stats_ref.inc_download_count(1);
+                            stats_ref.record_download(DownloadStat {
+                                dl_duration: dl_start_time.elapsed().as_millis() as u64,
+                                size: downloaded_chunk.len() as u64,
+                                wait_duration,
+                            });
                             Download::Done(Arc::new(downloaded_chunk))
                         }
                         Err(err) => Download::Error(format!("{}", err)),

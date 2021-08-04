@@ -18,19 +18,13 @@ async fn main() -> Result<(), Error> {
 }
 
 #[derive(Deserialize)]
-struct ConfigRange {
-    start: u64,
-    length: usize,
-}
-
-#[derive(Deserialize)]
 struct Config {
     pub region: String,
     pub bucket: String,
     pub key: String,
     pub size: u64,
     pub max_parallel: usize,
-    pub ranges: Vec<ConfigRange>,
+    pub ranges: Vec<Range>,
 }
 
 async fn func(event: Value, _: Context) -> Result<Value, Error> {
@@ -43,16 +37,7 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
     let mut download_cache = DownloadCache::new(config.max_parallel);
     let file_manager = download_cache.register(Box::new(file_description)).await;
 
-    file_manager.queue_download(
-        config
-            .ranges
-            .iter()
-            .map(|r| Range {
-                start: r.start,
-                length: r.length,
-            })
-            .collect(),
-    )?;
+    file_manager.queue_download(config.ranges.clone())?;
 
     let mut file_reader = CacheCursor {
         cache: file_manager,
@@ -75,8 +60,6 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
         "run_count": run_count,
         "init_duration": init_duration,
         "range_durations": range_durations,
-        "downloaded_bytes": download_cache.get_stats().downloaded_bytes(),
-        "waiting_download_ms": download_cache.get_stats().waiting_download_ms(),
-        "download_count": download_cache.get_stats().download_count()
+        "downloaded_bytes": download_cache.get_stats().recorded_downloads(),
     }))
 }
