@@ -23,6 +23,8 @@ struct Config {
     pub bucket: String,
     pub key: String,
     pub size: u64,
+    pub initial_permits: Option<usize>,
+    pub realease_rate: Option<usize>,
     pub max_parallel: usize,
     pub ranges: Vec<Range>,
 }
@@ -34,7 +36,11 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
     let file_description =
         S3FileDescription::new(config.region, config.bucket, config.key, config.size);
 
-    let mut download_cache = DownloadCache::new(config.max_parallel);
+    let mut download_cache = DownloadCache::new_with(
+        config.initial_permits.unwrap_or(config.max_parallel),
+        config.realease_rate.unwrap_or(1),
+        config.max_parallel,
+    );
     let file_manager = download_cache.register(Box::new(file_description)).await;
 
     file_manager.queue_download(config.ranges.clone())?;

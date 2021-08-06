@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -29,17 +30,32 @@ pub struct DownloadCache {
     downloaders: DownloaderMap,
     semaphore: Arc<Semaphore>,
     stats: CacheStats,
+    release_rate: usize,
+    current_max_parallel: Arc<AtomicUsize>,
+    absolute_max_parallel: usize,
 }
 
 impl DownloadCache {
     /// Create a cache capable of storing data chunks for multiple files.
     /// * `max_parallel` - The maximum number of parallel downloads
     pub fn new(max_parallel: usize) -> Self {
+        DownloadCache::new_with(max_parallel, 1, max_parallel)
+    }
+
+    /// Same as `new(max_parallel)`, but with finer options:
+    /// * `initial_permits` - The maximum number of parallel downloads initially
+    /// * `release_rate` - The number of new downloads that can be started each time a download finishes.
+    /// A `release_rate` of 1 maintains the maximum parallel downloads to the `initial_permits`.
+    /// * `max_parallel` - The maximum number of parallel downloads
+    pub fn new_with(initial_permits: usize, release_rate: usize, max_parallel: usize) -> Self {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
             downloaders: Arc::new(Mutex::new(HashMap::new())),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(max_parallel)),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(initial_permits)),
             stats: CacheStats::new(),
+            release_rate,
+            current_max_parallel: Arc::new(AtomicUsize::new(initial_permits)),
+            absolute_max_parallel: max_parallel,
         }
     }
 
@@ -64,6 +80,9 @@ impl DownloadCache {
         let downloader_ref = self.register_downloader(&*file_description);
         let semaphore_ref = Arc::clone(&self.semaphore);
         let stat_ref = self.stats.clone();
+        let release_rate = self.release_rate;
+        let absolute_max_parallel = self.absolute_max_parallel;
+        let current_max_parallel = Arc::clone(&self.current_max_parallel);
         let uri = file_description.get_uri();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
@@ -73,17 +92,24 @@ impl DownloadCache {
                 // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
                 let semaphore_ref = Arc::clone(&semaphore_ref);
+                let current_max_parallel = Arc::clone(&current_max_parallel);
                 let stats_ref = stat_ref.clone();
                 let file_cache = file_cache.clone();
                 let uri = uri.clone();
                 tokio::spawn(async move {
                     // start the actual download
                     let dl_start_time = Instant::now();
+
                     let dl_res = downloader_ref
                         .download(uri.clone(), message.start, message.length)
                         .await;
-                    // once the download is completed, release the permit
-                    semaphore_ref.add_permits(1);
+                    // once the download is completed, release the permit at the configured rate
+                    let new_permits = DownloadCache::permit_leap(
+                        &current_max_parallel,
+                        absolute_max_parallel,
+                        release_rate,
+                    );
+                    semaphore_ref.add_permits(new_permits);
                     let dl_enum = match dl_res {
                         Ok(downloaded_chunk) => {
                             stats_ref.record_download(DownloadStat {
@@ -121,6 +147,26 @@ impl DownloadCache {
             }
         }
     }
+
+    fn permit_leap(
+        current_max_parallel: &AtomicUsize,
+        absolute_max_parallel: usize,
+        release_rate: usize,
+    ) -> usize {
+        let old_current = current_max_parallel
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+                if x + release_rate >= absolute_max_parallel {
+                    Some(absolute_max_parallel)
+                } else {
+                    Some(x + release_rate)
+                }
+            })
+            .unwrap();
+        std::cmp::min(
+            release_rate,
+            std::cmp::max(absolute_max_parallel - old_current, 1),
+        )
+    }
 }
 
 impl fmt::Debug for DownloadCache {
@@ -134,5 +180,22 @@ impl fmt::Debug for DownloadCache {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_permit_leap() {
+        // follow release rate if you can
+        assert_eq!(DownloadCache::permit_leap(&AtomicUsize::new(1), 3, 1), 1);
+        assert_eq!(DownloadCache::permit_leap(&AtomicUsize::new(1), 3, 2), 2);
+        // release what remains before reaching max otherwise
+        assert_eq!(DownloadCache::permit_leap(&AtomicUsize::new(1), 3, 3), 2);
+        assert_eq!(DownloadCache::permit_leap(&AtomicUsize::new(1), 2, 3), 1);
+        // permit leap must be at least one
+        assert_eq!(DownloadCache::permit_leap(&AtomicUsize::new(3), 3, 3), 1);
     }
 }
