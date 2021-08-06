@@ -52,14 +52,13 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
         // reading the bytes forces to block until the range is downloaded
         let mut file_reader = file_reader.clone();
         let mut buf = vec![0u8; 10];
-        file_reader.seek(SeekFrom::Start(range.start)).unwrap();
+        file_reader.seek(SeekFrom::Start(range.start))?;
         tokio::task::spawn_blocking(move || -> Result<(), std::io::Error> {
             file_reader.read_exact(&mut buf)?;
             Ok(())
         })
         .await
-        .unwrap()
-        .unwrap();
+        .unwrap()?;
 
         range_durations.push(start_time.elapsed().as_millis() as u64);
     }
