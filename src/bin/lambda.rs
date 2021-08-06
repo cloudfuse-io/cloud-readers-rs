@@ -39,7 +39,7 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
 
     file_manager.queue_download(config.ranges.clone())?;
 
-    let mut file_reader = CacheCursor {
+    let file_reader = CacheCursor {
         cache: file_manager,
         position: 0,
     };
@@ -50,9 +50,17 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
     let start_time = Instant::now();
     for range in config.ranges {
         // reading the bytes forces to block until the range is downloaded
+        let mut file_reader = file_reader.clone();
         let mut buf = vec![0u8; 10];
         file_reader.seek(SeekFrom::Start(range.start)).unwrap();
-        file_reader.read_exact(&mut buf).unwrap();
+        tokio::task::spawn_blocking(move || -> Result<(), std::io::Error> {
+            file_reader.read_exact(&mut buf)?;
+            Ok(())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
         range_durations.push(start_time.elapsed().as_millis() as u64);
     }
 
@@ -60,6 +68,6 @@ async fn func(event: Value, _: Context) -> Result<Value, Error> {
         "run_count": run_count,
         "init_duration": init_duration,
         "range_durations": range_durations,
-        "downloaded_bytes": download_cache.get_stats().recorded_downloads(),
+        "cache_stats": download_cache.get_stats().recorded_downloads(),
     }))
 }

@@ -32,6 +32,15 @@ pub(crate) struct RangeCursor {
     offset: u64,
 }
 
+impl fmt::Debug for RangeCursor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RangeCursor")
+            .field("data", &format!("vec![x;{}]", self.data.len()))
+            .field("offset", &self.offset)
+            .finish()
+    }
+}
+
 impl RangeCursor {
     /// Construct new RangeCursor while ensuring that the offset is within the expected bounds
     fn try_new(data: Arc<Vec<u8>>, offset: u64) -> Result<Self> {
@@ -59,6 +68,19 @@ pub(crate) struct FileCache {
     ranges: Arc<Mutex<BTreeMap<u64, Download>>>,
     cv: Arc<Condvar>,
     file_size: u64,
+}
+
+fn fmt_debug(map: &BTreeMap<u64, Download>) -> String {
+    map.iter()
+        .map(|(pos, dl)| format!("-- Start={:0>10} Status={:?}", pos, dl))
+        .join("\n")
+}
+
+impl fmt::Debug for FileCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let range_guard = self.ranges.lock().unwrap();
+        write!(f, "{}", fmt_debug(&*range_guard))
+    }
 }
 
 impl FileCache {
@@ -129,19 +151,6 @@ impl FileCache {
 pub struct FileManager {
     cache: FileCache,
     tx: UnboundedSender<Range>,
-}
-
-fn fmt_debug(map: &BTreeMap<u64, Download>) -> String {
-    map.iter()
-        .map(|(pos, dl)| format!("-- Start={:0>10} Status={:?}", pos, dl))
-        .join("\n")
-}
-
-impl fmt::Debug for FileCache {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let range_guard = self.ranges.lock().unwrap();
-        write!(f, "{}", fmt_debug(&*range_guard))
-    }
 }
 
 impl FileManager {
@@ -245,13 +254,41 @@ Download not scheduled at position 120, scheduled ranges are:
         );
     }
 
+    #[tokio::test]
+    async fn test_read_error_downloader() {
+        let mut download_cache = DownloadCache::new(1);
+
+        let file_manager = download_cache
+            .register(Box::new(ErrorFileDescription {}))
+            .await;
+
+        file_manager
+            .queue_download(vec![Range {
+                start: 0,
+                length: 100,
+            }])
+            .expect("Could not queue Range on handle");
+
+        let error = tokio::task::spawn_blocking(move || -> Result<RangeCursor> {
+            file_manager.get_range(0)
+        })
+        .await
+        .unwrap()
+        .unwrap_err();
+
+        assert_eq!(
+            format!("{:?}", error),
+            "Error in ErrorDownloader\n\nCaused by:\n    Download Failed"
+        );
+    }
+
     async fn init_mock(len: u64) -> FileManager {
         let mut download_cache = DownloadCache::new(1);
 
-        let mock_file_description = MockFileDescription::new(len);
+        let pattern_file_description = PatternFileDescription::new(len);
 
         download_cache
-            .register(Box::new(mock_file_description))
+            .register(Box::new(pattern_file_description))
             .await
     }
 

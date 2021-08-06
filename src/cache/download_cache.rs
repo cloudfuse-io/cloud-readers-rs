@@ -47,6 +47,7 @@ impl DownloadCache {
     /// Spawns a task that will download the file chunks queued on the [`FileManager`].
     /// TODO do not re-download chunks if same file was already registered
     pub async fn register(&mut self, file_description: Box<dyn FileDescription>) -> FileManager {
+        let register_time = Instant::now();
         let (tx, mut rx) = unbounded_channel::<Range>();
         let file_cache;
         {
@@ -67,10 +68,8 @@ impl DownloadCache {
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 // obtain a permit, it will be released once the download completes
-                let wait_start_time = Instant::now();
                 let permit = semaphore_ref.acquire().await.unwrap();
                 permit.forget();
-                let wait_duration = wait_start_time.elapsed().as_millis() as u64;
                 // run download in a dedicated task
                 let downloader_ref = Arc::clone(&downloader_ref);
                 let semaphore_ref = Arc::clone(&semaphore_ref);
@@ -90,11 +89,12 @@ impl DownloadCache {
                             stats_ref.record_download(DownloadStat {
                                 dl_duration: dl_start_time.elapsed().as_millis() as u64,
                                 size: downloaded_chunk.len() as u64,
-                                wait_duration,
+                                dl_start: dl_start_time.duration_since(register_time).as_millis()
+                                    as u64,
                             });
                             Download::Done(Arc::new(downloaded_chunk))
                         }
-                        Err(err) => Download::Error(format!("{}", err)),
+                        Err(err) => Download::Error(format!("{:?}", err)),
                     };
                     file_cache.insert(message.start, dl_enum);
                 });

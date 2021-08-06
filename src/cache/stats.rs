@@ -4,11 +4,15 @@
 
 use serde::Serialize;
 
+/// KPIs relative to one specific range download
 #[derive(Clone, Serialize)]
 pub struct DownloadStat {
+    // range size in bytes
     pub size: u64,
+    /// ms spent inside download function
     pub dl_duration: u64,
-    pub wait_duration: u64,
+    /// ms elapsed since registering
+    pub dl_start: u64,
 }
 
 #[cfg(not(feature = "stats"))]
@@ -75,5 +79,47 @@ pub mod noop {
         }
 
         pub(crate) fn record_download(&self, _: DownloadStat) {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[cfg(feature = "stats")]
+    async fn test_sync() {
+        let stats = CacheStats::new();
+        for d in mock_data() {
+            stats.record_download(d);
+        }
+        let result = stats.recorded_downloads();
+        assert_eq!(result.len(), mock_data().len())
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "stats"))]
+    async fn test_noop() {
+        let stats = CacheStats::new();
+        for d in mock_data() {
+            stats.record_download(d);
+        }
+        let result = stats.recorded_downloads();
+        assert_eq!(result.len(), 0)
+    }
+
+    fn mock_data() -> Vec<DownloadStat> {
+        vec![
+            DownloadStat {
+                dl_duration: 231,
+                dl_start: 4564,
+                size: 10000000,
+            },
+            DownloadStat {
+                dl_duration: 123,
+                dl_start: 6547,
+                size: 10000000,
+            },
+        ]
     }
 }

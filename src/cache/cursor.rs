@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(
             format!("{:?}", download_cache),
             "\
-file = mock_downloader / mock_uri:
+file = pattern_downloader / pattern_uri:
 -- Start=0000000000 Status=Done(100 bytes)"
         );
     }
@@ -137,7 +137,7 @@ file = mock_downloader / mock_uri:
         assert_eq!(
             format!("{:?}", download_cache),
             "\
-file = mock_downloader / mock_uri:
+file = pattern_downloader / pattern_uri:
 -- Start=0000000000 Status=Done(100 bytes)
 -- Start=0000000100 Status=Done(100 bytes)
 -- Start=0000000200 Status=Done(100 bytes)"
@@ -182,7 +182,7 @@ file = mock_downloader / mock_uri:
         assert_eq!(
             format!("{:?}", download_cache),
             "\
-file = mock_downloader / mock_uri:
+file = pattern_downloader / pattern_uri:
 -- Start=0000000000 Status=Done(100 bytes)"
         );
     }
@@ -262,7 +262,7 @@ Download not scheduled at position 300, scheduled ranges are:
     async fn init_mock(len: u64) -> (DownloadCache, FileManager) {
         let mut download_cache = DownloadCache::new(2);
 
-        let mock_file_description = MockFileDescription::new(len);
+        let mock_file_description = PatternFileDescription::new(len);
 
         let file_manager = download_cache
             .register(Box::new(mock_file_description))
