@@ -8,7 +8,7 @@ To be able to run the tests with a cloud storage, you first need to deploy the b
 
 To run the notebooks, install Jupyter and run `jupyter lab` at the root of the project.
 
-The notebook [`bench.ipynb`](bench.ipynb) helps you deploy an AWS Lambda function into one of your AWS accounts. You just need your credentials to be configured in the default AWS credentials file and change the `aws_profile` variable in the notebook to match your setup.
+The notebook [`infra.ipynb`](infra.ipynb) helps you deploy an AWS Lambda function into one of your AWS accounts. You just need your credentials to be configured in the default AWS credentials file and change the `AWS_PROFILE` environment variable before starting jupyter to match your setup.
 
 With the same notbook, you can also tear down the infrastructure that was deployed previously. The Terraform state is stored on a local docker volume. If you delete it before running `terraform destroy`, you won't be able to tear down the infrastructure automatically any more.
 
